@@ -135,15 +135,14 @@ export function Dashboard({ t, user, connection, onConnectionUpdated, lang = "ar
   // Load dashboard data from Google Sheets & Local storage
   async function loadDashboardData() {
     try {
-      const [memRes, photoRes, actRes, queueRes] = await Promise.allSettled([
+      const [memRes, actRes, queueRes] = await Promise.allSettled([
         api("getMemories"),
-        api("getPhotos"),
         api("getActivities"),
         api("getMediaQueue", { type: "listen" }),
       ]);
 
       const memories = memRes.status === "fulfilled" && memRes.value?.memories ? memRes.value.memories : [];
-      let photos = photoRes.status === "fulfilled" && photoRes.value?.photos ? [...photoRes.value.photos] : [];
+      let photos = [];
       const activities = actRes.status === "fulfilled" && actRes.value?.activities ? actRes.value.activities : [];
       const playlist = queueRes.status === "fulfilled" && queueRes.value?.queue ? queueRes.value.queue : [];
 
@@ -152,7 +151,8 @@ export function Dashboard({ t, user, connection, onConnectionUpdated, lang = "ar
         memories.forEach((m) => {
           if (m.photoUrl && !photos.some((p) => p.url === m.photoUrl)) {
             photos.push({ id: m.coverPhotoId || m.id, url: m.photoUrl, caption: m.title });
-          } else if (Array.isArray(m.photos)) {
+          }
+          if (Array.isArray(m.photos)) {
             m.photos.forEach((ph) => {
               if (ph && ph.url && !photos.some((p) => p.url === ph.url)) {
                 photos.push(ph);
@@ -163,16 +163,17 @@ export function Dashboard({ t, user, connection, onConnectionUpdated, lang = "ar
       }
 
       try {
-        const connKey = connection?.connectionId || "guest";
-        const localAlbumStr = localStorage.getItem(`rel_local_album_photos_${connKey}`);
-        if (localAlbumStr) {
-          const localList = JSON.parse(localAlbumStr);
-          if (Array.isArray(localList)) {
-            localList.forEach((lp) => {
-              if (lp && lp.url && !photos.some((p) => p.url === lp.url)) {
-                photos.unshift(lp);
-              }
-            });
+        if (connection?.connectionId) {
+          const localAlbumStr = localStorage.getItem(`rel_local_album_photos_${connection.connectionId}`);
+          if (localAlbumStr) {
+            const localList = JSON.parse(localAlbumStr);
+            if (Array.isArray(localList)) {
+              localList.forEach((lp) => {
+                if (lp && lp.url && !photos.some((p) => p.url === lp.url)) {
+                  photos.unshift(lp);
+                }
+              });
+            }
           }
         }
       } catch (e) {}
@@ -191,6 +192,10 @@ export function Dashboard({ t, user, connection, onConnectionUpdated, lang = "ar
 
   useEffect(() => {
     loadDashboardData();
+    const interval = setInterval(() => {
+      loadDashboardData();
+    }, 15000);
+    return () => clearInterval(interval);
   }, [connection?.connectionId]);
 
   // Copy pairing code

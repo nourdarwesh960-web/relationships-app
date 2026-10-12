@@ -1,8 +1,9 @@
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useRef } from "react";
 import { api } from "../api.js";
 import { Lightbox } from "../components/Lightbox.jsx";
 import { PhotoBouquet } from "../components/PhotoBouquet.jsx";
 import { compressImage } from "../imageUtils.js";
+import { formatDateToIso } from "../dateUtils.js";
 
 function getLocalAlbumKey(connection) {
   return connection?.connectionId ? `rel_local_album_photos_${connection.connectionId}` : null;
@@ -34,8 +35,10 @@ export function AlbumPage({ t, user, connection, lang = "ar" }) {
   const [memories, setMemories] = useState([]);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
+  const [savingBouquet, setSavingBouquet] = useState(false);
   const [err, setErr] = useState("");
   const [toastMsg, setToastMsg] = useState("");
+  const autoMigratedRef = useRef(false);
 
   // Clean legacy unscoped keys
   useEffect(() => {
@@ -69,59 +72,42 @@ export function AlbumPage({ t, user, connection, lang = "ar" }) {
     setTimeout(() => setToastMsg(""), 2800);
   };
 
-  async function loadPhotos(isManualSync = false) {
+  async function loadPhotos(isManualSync = false, isSilent = false) {
     try {
       if (isManualSync) setSyncing(true);
-      else setLoading(true);
+      else if (!isSilent) setLoading(true);
       setErr("");
 
-      // Fetch getPhotos and getMemories in parallel
-      const [photoRes, memRes] = await Promise.allSettled([
-        api("getPhotos"),
-        api("getMemories"),
-      ]);
-
+      const memRes = await api("getMemories");
       let all = [];
 
-      if (photoRes.status === "fulfilled" && Array.isArray(photoRes.value?.photos)) {
-        photoRes.value.photos.forEach((ph) => {
-          if (ph && ph.url && !all.some((p) => p.url === ph.url || p.id === ph.id)) {
-            all.push({
-              id: ph.id || ph.photoId,
-              url: ph.url,
-              caption: ph.caption || "",
-              createdAt: ph.createdAt || "",
-              uploaderId: ph.uploaderId || "",
-              memoryId: ph.memoryId || "",
-            });
-          }
-        });
-      }
-
-      // Extract all photos attached to memories
-      if (memRes.status === "fulfilled" && Array.isArray(memRes.value?.memories)) {
-        setMemories(memRes.value.memories);
-        memRes.value.memories.forEach((m) => {
+      // Extract all photos attached to memories (primary shared cloud store)
+      if (Array.isArray(memRes?.memories)) {
+        setMemories(memRes.memories);
+        memRes.memories.forEach((m) => {
+          const cleanDate = formatDateToIso(m.memoryDate) || m.createdAt || "";
           if (m.photoUrl && !all.some((p) => p.url === m.photoUrl)) {
             all.push({
               id: m.coverPhotoId || `ph_mem_${m.id}`,
               url: m.photoUrl,
               caption: m.title || "",
-              createdAt: m.createdAt || m.memoryDate || "",
+              createdAt: m.createdAt || cleanDate,
               uploaderId: m.authorId || "",
-              memoryId: m.id || "",
+              memoryId: m.id || m.memoryId || "",
+              _syncedToServer: true,
             });
           }
           if (Array.isArray(m.photos)) {
             m.photos.forEach((ph) => {
-              if (ph && ph.url && !all.some((p) => p.url === ph.url || p.id === ph.id)) {
+              if (ph && ph.url && !all.some((p) => p.url === ph.url || (p.id && p.id === ph.id))) {
                 all.push({
                   id: ph.id || ph.photoId || `ph_${Math.random().toString(36).substring(2, 9)}`,
                   url: ph.url,
                   caption: ph.caption || m.title || "",
-                  createdAt: m.createdAt || m.memoryDate || "",
+                  createdAt: ph.createdAt || m.createdAt || cleanDate,
                   uploaderId: ph.uploaderId || m.authorId || "",
-                  memoryId: m.id || "",
+                  memoryId: m.id || m.memoryId || "",
+                  _syncedToServer: true,
                 });
               }
             });
@@ -129,17 +115,56 @@ export function AlbumPage({ t, user, connection, lang = "ar" }) {
         });
       }
 
-      // If online results returned, merge and update local connection cache
+      // Check if there are any local cached photos that weren't synced to a memoryId yet
+      const localCached = getLocalAlbumPhotos(connection);
+      const unsyncedLocal = localCached.filter(
+        (lp) => lp && lp.url && !all.some((sp) => sp.url === lp.url)
+      );
+
+      if (unsyncedLocal.length > 0 && !autoMigratedRef.current && connection?.connectionId) {
+        autoMigratedRef.current = true;
+        // Keep them visible immediately
+        all = [...unsyncedLocal, ...all];
+        // Push unsynced local photos to shared server memory in background so partner gets them!
+        (async () => {
+          try {
+            const memResMig = await api("saveMemory", {
+              title: isAr ? "صور الألبوم المشترك 📸" : "Shared Album Photos 📸",
+              memoryDate: new Date().toISOString().split("T")[0],
+              content: "",
+              category: "general",
+              privacy: "shared",
+            });
+            const migMemId = memResMig?.memory?.memoryId || memResMig?.memory?.id;
+            if (migMemId) {
+              for (let i = 0; i < unsyncedLocal.length; i++) {
+                const lp = unsyncedLocal[i];
+                const compressed = await compressImage(lp.url, 720, 0.68, 32000);
+                await api("uploadPhoto", {
+                  memoryId: migMemId,
+                  data: compressed,
+                  caption: lp.caption || (isAr ? "صورة في الألبوم" : "Album Photo"),
+                  orderIndex: i,
+                  isCover: i === 0,
+                });
+              }
+              const refreshed = await api("getMemories");
+              if (Array.isArray(refreshed?.memories)) {
+                setMemories(refreshed.memories);
+              }
+            }
+          } catch (_) {}
+        })();
+      }
+
       if (all.length > 0) {
         all.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
         setPhotos(all);
         saveLocalAlbumPhotos(all, connection);
+      } else if (localCached.length > 0) {
+        setPhotos(localCached);
       } else {
-        // Fallback to connection cache if offline
-        const localCached = getLocalAlbumPhotos(connection);
-        if (localCached.length > 0) {
-          setPhotos(localCached);
-        }
+        setPhotos([]);
       }
 
       if (isManualSync) {
@@ -149,7 +174,7 @@ export function AlbumPage({ t, user, connection, lang = "ar" }) {
       const localFallback = getLocalAlbumPhotos(connection);
       if (localFallback.length > 0) {
         setPhotos(localFallback);
-      } else {
+      } else if (!isSilent) {
         setErr(isAr ? "تعذر تحميل الصور حالياً" : "Unable to load photos at the moment");
       }
     } finally {
@@ -160,7 +185,11 @@ export function AlbumPage({ t, user, connection, lang = "ar" }) {
 
   useEffect(() => {
     loadPhotos();
-  }, []);
+    const interval = setInterval(() => {
+      loadPhotos(false, true);
+    }, 10000);
+    return () => clearInterval(interval);
+  }, [connection?.connectionId]);
 
   async function handleFilesSelect(e) {
     const files = Array.from(e.target.files || []);
@@ -170,7 +199,7 @@ export function AlbumPage({ t, user, connection, lang = "ar" }) {
       const compressedList = [];
       for (const file of files) {
         try {
-          const compressed = await compressImage(file, 800, 0.72, 38000);
+          const compressed = await compressImage(file, 720, 0.68, 32000);
           if (compressed) {
             compressedList.push({
               id: `ph_temp_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
@@ -201,58 +230,121 @@ export function AlbumPage({ t, user, connection, lang = "ar" }) {
     try {
       setUploading(true);
       const cap = commonCaption.trim();
+      const count = uploadQueue.length;
+      const queueCopy = [...uploadQueue];
 
-      const newPhotos = uploadQueue.map((ph, idx) => ({
+      const albumTitle =
+        cap ||
+        (count > 1
+          ? isAr
+            ? `بوكيه صور (${count} صور) 📸`
+            : `Photo Bouquet (${count} photos) 📸`
+          : isAr
+          ? "صورة في الألبوم المشترك 📸"
+          : "Shared Album Photo 📸");
+
+      const newPhotos = queueCopy.map((ph, idx) => ({
         id: ph.id || `ph_opt_${Date.now()}_${idx}`,
         url: ph.url,
-        caption: cap || ph.caption || (isAr ? "صورة جديدة" : "New Photo"),
+        caption: cap || ph.caption || albumTitle,
         createdAt: new Date().toISOString(),
         uploaderId: user?.id,
+        _syncedToServer: true,
       }));
 
       // Optimistically update photos state immediately!
       setPhotos((prev) => [...newPhotos, ...prev]);
       saveLocalAlbumPhotos([...newPhotos, ...photos], connection);
 
-      const count = uploadQueue.length;
-      const queueCopy = [...uploadQueue];
       setUploadModalOpen(false);
       setUploadQueue([]);
       setCommonCaption("");
 
       showToast(
         isAr
-          ? `اتحفظت ${count} صور في الألبوم وتظهر عند الشريكين 📸`
-          : `${count} photos uploaded to shared album! 📸`
+          ? `جاري حفظ ومزامنة ${count} صور عند الشريكين... 📸`
+          : `Uploading and syncing ${count} photos for both partners... 📸`
       );
 
-      // Upload each photo to the backend
-      for (const ph of queueCopy) {
-        try {
+      // 1. Create a shared memory container so getMemories returns these photos to BOTH partners
+      const memRes = await api("saveMemory", {
+        title: albumTitle,
+        memoryDate: new Date().toISOString().split("T")[0],
+        content: cap || "",
+        category: "general",
+        privacy: "shared",
+      });
+
+      const targetMemoryId = memRes?.memory?.memoryId || memRes?.memory?.id;
+
+      // 2. Upload each compressed photo linked to targetMemoryId
+      if (targetMemoryId) {
+        for (let i = 0; i < queueCopy.length; i++) {
+          const ph = queueCopy[i];
+          const compressedData = await compressImage(ph.url, 720, 0.68, 32000);
           await api("uploadPhoto", {
-            data: ph.url,
-            caption: cap || ph.caption,
+            memoryId: targetMemoryId,
+            data: compressedData,
+            caption: cap || ph.caption || albumTitle,
+            orderIndex: i,
+            isCover: i === 0,
           });
-        } catch (upErr) {
-          // If uploadPhoto has any issue, save as memory fallback
-          try {
-            await api("saveMemory", {
-              title: cap || (isAr ? "صورة في الألبوم" : "Album Photo"),
-              memoryDate: new Date().toISOString().split("T")[0],
-              content: cap || "",
-              category: "general",
-              photoUrl: ph.url,
-              photos: [{ url: ph.url, caption: cap }],
-            });
-          } catch (_) {}
         }
       }
 
-      await loadPhotos();
+      showToast(
+        isAr
+          ? `اتحفظت ${count} صور في الألبوم وظهرت عند الشريكين بنجاح! 🎉📸`
+          : `${count} photos synced to both partners! 🎉📸`
+      );
+
+      await loadPhotos(false, true);
     } catch (error) {
       showToast(error.message || (isAr ? "حصلت مشكلة أثناء حفظ الصور" : "Error saving photos"));
     } finally {
       setUploading(false);
+    }
+  }
+
+  async function handleSaveSelectedAsBouquet() {
+    if (selectedPhotosList.length < 2) return;
+    try {
+      setSavingBouquet(true);
+      const bqTitle = isAr
+        ? `بوكيه كوتشينة (${selectedPhotosList.length} صور) 💐`
+        : `Photo Bouquet (${selectedPhotosList.length} photos) 💐`;
+
+      const memRes = await api("saveMemory", {
+        title: bqTitle,
+        memoryDate: new Date().toISOString().split("T")[0],
+        content: "",
+        category: "general",
+        privacy: "shared",
+      });
+      const targetMemoryId = memRes?.memory?.memoryId || memRes?.memory?.id;
+      if (targetMemoryId) {
+        for (let i = 0; i < selectedPhotosList.length; i++) {
+          const ph = selectedPhotosList[i];
+          const compressedData = await compressImage(ph.url, 720, 0.68, 32000);
+          await api("uploadPhoto", {
+            memoryId: targetMemoryId,
+            data: compressedData,
+            caption: ph.caption || bqTitle,
+            orderIndex: i,
+            isCover: i === 0,
+          });
+        }
+      }
+      setBouquetModalOpen(false);
+      setSelectMode(false);
+      setSelectedIds(new Set());
+      showToast(isAr ? "تم حفظ البوكيه ومشاركته عند الشريكين بنجاح! 💐" : "Bouquet saved and shared with partner! 💐");
+      await loadPhotos(false, true);
+      setViewTab("bouquets");
+    } catch (e) {
+      showToast(isAr ? "تعذر حفظ البوكيه" : "Failed to save bouquet");
+    } finally {
+      setSavingBouquet(false);
     }
   }
 
@@ -262,6 +354,7 @@ export function AlbumPage({ t, user, connection, lang = "ar" }) {
       : "Are you sure you want to remove this photo from your album?";
     if (!window.confirm(confirmPrompt)) return;
     try {
+      const targetPhoto = photos.find((p) => p.id === id);
       setPhotos((prev) => prev.filter((p) => p.id !== id));
       const remaining = getLocalAlbumPhotos(connection).filter((p) => p.id !== id);
       saveLocalAlbumPhotos(remaining, connection);
@@ -269,6 +362,16 @@ export function AlbumPage({ t, user, connection, lang = "ar" }) {
       try {
         await api("deletePhoto", { id });
       } catch (_) {}
+
+      // If this photo was the only photo in its memory container, also delete that memory container
+      if (targetPhoto?.memoryId) {
+        const parentMem = memories.find((m) => (m.id || m.memoryId) === targetPhoto.memoryId);
+        if (parentMem && (!parentMem.photos || parentMem.photos.length <= 1)) {
+          try {
+            await api("deleteMemory", { id: targetPhoto.memoryId });
+          } catch (_) {}
+        }
+      }
 
       showToast(isAr ? "اتمسحت الصورة من الألبوم" : "Photo removed from album");
       if (lightbox.open) setLightbox({ open: false, photos: [], index: 0 });
@@ -311,7 +414,7 @@ export function AlbumPage({ t, user, connection, lang = "ar" }) {
         return {
           id: m.id || m.memoryId,
           title: m.title,
-          date: m.memoryDate,
+          date: formatDateToIso(m.memoryDate) || m.memoryDate,
           photos: phs,
         };
       });
@@ -711,7 +814,20 @@ export function AlbumPage({ t, user, connection, lang = "ar" }) {
               />
             </div>
 
-            <div className="flex items-center justify-end pt-2">
+            <div className="flex items-center justify-between gap-2 pt-2">
+              <button
+                type="button"
+                disabled={savingBouquet || selectedPhotosList.length < 2}
+                onClick={handleSaveSelectedAsBouquet}
+                className="flex-1 px-4 py-2.5 rounded-2xl bg-gradient-to-r from-primary to-primary-container text-on-primary font-bold text-xs shadow-md hover:opacity-95 disabled:opacity-50 cursor-pointer flex items-center justify-center gap-1.5"
+              >
+                <span className="material-symbols-outlined text-[16px]">cloud_upload</span>
+                <span>
+                  {savingBouquet
+                    ? isAr ? "جاري حفظ البوكيه للشريكين..." : "Saving shared bouquet..."
+                    : isAr ? "حفظ كبوكيه مشترك عند الشريكين 💐" : "Save Shared Bouquet 💐"}
+                </span>
+              </button>
               <button
                 type="button"
                 onClick={() => setBouquetModalOpen(false)}

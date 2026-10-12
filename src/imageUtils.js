@@ -6,9 +6,9 @@
  */
 export async function compressImage(
   fileOrBlob,
-  maxDimension = 800,
-  initialQuality = 0.72,
-  maxCharLength = 39000
+  maxDimension = 720,
+  initialQuality = 0.68,
+  maxCharLength = 32000
 ) {
   return new Promise((resolve) => {
     if (!fileOrBlob) return resolve("");
@@ -18,11 +18,20 @@ export async function compressImage(
       return resolve(fileOrBlob);
     }
 
+    // Fast path: if already a JPEG data URL under maxCharLength, return directly
+    if (
+      typeof fileOrBlob === "string" &&
+      fileOrBlob.startsWith("data:image/jpeg;base64,") &&
+      fileOrBlob.length <= maxCharLength
+    ) {
+      return resolve(fileOrBlob);
+    }
+
     const processImageObj = (img, fallbackDataUrl = "") => {
       try {
         const render = (dim, q) => {
-          let w = img.naturalWidth || img.width || 800;
-          let h = img.naturalHeight || img.height || 600;
+          let w = img.naturalWidth || img.width || 720;
+          let h = img.naturalHeight || img.height || 540;
           if (w > h) {
             if (w > dim) {
               h = Math.round((h * dim) / w);
@@ -51,20 +60,20 @@ export async function compressImage(
 
         // Progressive reduction loop until strictly under maxCharLength
         let attempts = 0;
-        while (dataUrl.length > maxCharLength && attempts < 8) {
+        while (dataUrl.length > maxCharLength && attempts < 12) {
           attempts++;
-          if (dim > 240) {
-            dim = Math.round(dim * 0.75);
+          if (dim > 180) {
+            dim = Math.round(dim * 0.78);
           }
-          if (q > 0.28) {
-            q = Math.max(0.2, +(q - 0.12).toFixed(2));
+          if (q > 0.22) {
+            q = Math.max(0.2, +(q - 0.1).toFixed(2));
           }
           dataUrl = render(dim, q);
         }
 
         resolve(dataUrl);
       } catch (err) {
-        // Safe fallback to raw data
+        // Safe fallback to raw data if small enough
         resolve(fallbackDataUrl || (img && img.src) || "");
       }
     };

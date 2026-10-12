@@ -5,6 +5,7 @@ import { SignatureLoader } from "../components/SignatureLoader.jsx";
 import { EmotionalEmptyState } from "../components/EmotionalEmptyState.jsx";
 import { PhotoBouquet } from "../components/PhotoBouquet.jsx";
 import { compressImage } from "../imageUtils.js";
+import { formatDateToIso } from "../dateUtils.js";
 
 function getGoogleMapsUrl(loc) {
   if (!loc) return "";
@@ -68,21 +69,39 @@ export function MemoriesPage({ t, user, connection, lang = "ar" }) {
     setTimeout(() => setToastMsg(""), 2600);
   };
 
-  async function loadMemories() {
+  async function loadMemories(isSilent = false) {
     try {
-      setLoading(true);
+      if (!isSilent) setLoading(true);
       const res = await api("getMemories");
-      setMemories(res.memories || []);
+      const rawMemories = Array.isArray(res?.memories) ? res.memories : [];
+      const normalized = rawMemories.map((m) => {
+        const phs = Array.isArray(m.photos) ? m.photos : [];
+        const cover = m.photoUrl || m.coverPhotoUrl || phs[0]?.url || "";
+        return {
+          ...m,
+          id: m.id || m.memoryId,
+          memoryDate: formatDateToIso(m.memoryDate) || m.memoryDate || "",
+          photoUrl: cover,
+          photos: phs,
+        };
+      });
+      setMemories(normalized);
     } catch (e) {
-      setErr(e.message || (isAr ? "حصلت مشكلة في تحميل الذكريات" : "Failed to load memories"));
+      if (!isSilent) {
+        setErr(e.message || (isAr ? "حصلت مشكلة في تحميل الذكريات" : "Failed to load memories"));
+      }
     } finally {
-      setLoading(false);
+      if (!isSilent) setLoading(false);
     }
   }
 
   useEffect(() => {
     loadMemories();
-  }, []);
+    const interval = setInterval(() => {
+      loadMemories(true);
+    }, 12000);
+    return () => clearInterval(interval);
+  }, [connection?.connectionId]);
 
   async function handlePhotoFilesChange(e) {
     const fileList = Array.from(e.target.files || []);
@@ -92,7 +111,7 @@ export function MemoriesPage({ t, user, connection, lang = "ar" }) {
       const processed = [];
       for (const file of fileList) {
         try {
-          const compressed = await compressImage(file, 800, 0.72, 38000);
+          const compressed = await compressImage(file, 720, 0.68, 32000);
           if (compressed) {
             processed.push({
               id: `ph_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
@@ -115,8 +134,8 @@ export function MemoriesPage({ t, user, connection, lang = "ar" }) {
 
         showToast(
           isAr
-            ? `تم تجهيز ${processed.length} صور للبوكيه 💐`
-            : `${processed.length} photos ready for bouquet 💐`
+            ? `تم ضغط وتجهيز ${processed.length} صور للبوكيه 💐`
+            : `${processed.length} photos compressed & ready for bouquet 💐`
         );
       } else {
         showToast(isAr ? "تعذر قراءة الصور، تأكد من الصيغة" : "Failed to read image files");
@@ -224,7 +243,7 @@ export function MemoriesPage({ t, user, connection, lang = "ar" }) {
 
     setForm({
       title: m.title || "",
-      memoryDate: m.memoryDate || new Date().toISOString().split("T")[0],
+      memoryDate: formatDateToIso(m.memoryDate) || new Date().toISOString().split("T")[0],
       content: m.content || "",
       category: m.category || "general",
       location: m.location || "",
@@ -277,7 +296,7 @@ export function MemoriesPage({ t, user, connection, lang = "ar" }) {
         return [optimisticMem, ...prev];
       });
 
-      await api("saveMemory", {
+      const saveRes = await api("saveMemory", {
         id: editingMemory ? editingMemory.id : undefined,
         title: form.title,
         memoryDate: form.memoryDate,
@@ -291,13 +310,35 @@ export function MemoriesPage({ t, user, connection, lang = "ar" }) {
         audioUrl: form.audioUrl || undefined,
       });
 
-      // Synchronize all photos into shared Photos album table for partner access
-      photosToSave.forEach((ph) => {
-        api("uploadPhoto", {
-          data: ph.url,
-          caption: ph.caption || form.title,
-        }).catch(() => {});
-      });
+      const savedMemoryId =
+        saveRes?.memory?.memoryId ||
+        saveRes?.memory?.id ||
+        (editingMemory ? editingMemory.id || editingMemory.memoryId : "");
+
+      // Upload every new photo to the Photos table WITH memoryId so getMemories returns them to both partners!
+      if (savedMemoryId && photosToSave.length > 0) {
+        for (let i = 0; i < photosToSave.length; i++) {
+          const ph = photosToSave[i];
+          const isAlreadyOnServer =
+            editingMemory &&
+            ph.id &&
+            !String(ph.id).startsWith("ph_") &&
+            !String(ph.id).startsWith("mem_");
+
+          if (!isAlreadyOnServer) {
+            try {
+              const compressedData = await compressImage(ph.url, 720, 0.68, 32000);
+              await api("uploadPhoto", {
+                memoryId: savedMemoryId,
+                data: compressedData,
+                caption: ph.caption || form.title,
+                orderIndex: i,
+                isCover: i === 0,
+              });
+            } catch (_) {}
+          }
+        }
+      }
 
       // Optimistically update local connection-scoped album cache
       if (photosToSave.length > 0 && connection?.connectionId) {
@@ -311,6 +352,8 @@ export function MemoriesPage({ t, user, connection, lang = "ar" }) {
                 url: ph.url,
                 caption: ph.caption || form.title,
                 createdAt: new Date().toISOString(),
+                memoryId: savedMemoryId,
+                _syncedToServer: true,
               });
             }
           });
@@ -322,9 +365,9 @@ export function MemoriesPage({ t, user, connection, lang = "ar" }) {
       showToast(
         editingMemory
           ? (isAr ? "تم تعديل الذكرى وبوكيه الصور بنجاح ✨" : "Memory updated successfully ✨")
-          : (isAr ? "تم حفظ الذكرى وبوكيه الصور بنجاح! 💐" : "Memory and photo bouquet saved! 💐")
+          : (isAr ? "تم حفظ الذكرى وبوكيه الصور ومشاركتها مع الشريك! 💐" : "Memory and photo bouquet shared with partner! 💐")
       );
-      await loadMemories();
+      await loadMemories(true);
     } catch (e) {
       setErr(e.message || (isAr ? "فشل حفظ الذكرى" : "Failed to save memory"));
     } finally {
