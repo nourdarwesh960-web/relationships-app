@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <meta name="theme-color" content="#f4ece2" />
+    <title>حكايتنا • مساحتنا الخاصة</title>
+
+    <!-- Google Fonts & Material Symbols -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@200..1000&family=Edu+QLD+Beginner:wght@400..700&family=Edu+QLD+Hand:wght@400..700&family=Playfair+Display:ital,wght@0,600;1,500&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet" />
+
+    <!-- Tailwind CDN + Forms + Container Queries -->
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              "background": "#f4ece2",
+              "surface": "#faf4ed",
+              "surface-dim": "#ede1d2",
+              "surface-bright": "#fdf9f4",
+              "surface-container-lowest": "#fdf9f4",
+              "surface-container-low": "#f6eee4",
+              "surface-container": "#efe3d4",
+              "surface-container-high": "#e7d9c8",
+              "surface-container-highest": "#dfceba",
+              "surface-variant": "#ebdccb",
+              "on-surface": "#26140f",
+              "on-surface-variant": "#543b34",
+              "inverse-surface": "#26140f",
+              "inverse-on-surface": "#faf4ed",
+              "primary": "#d8587e",
+              "primary-container": "#fae3eb",
+              "on-primary": "#ffffff",
+              "on-primary-container": "#54152a",
+              "primary-fixed": "#fae3eb",
+              "primary-fixed-dim": "#f7b8ca",
+              "on-primary-fixed": "#54152a",
+              "on-primary-fixed-variant": "#872343",
+              "inverse-primary": "#f7b8ca",
+              "secondary": "#c2416b",
+              "secondary-container": "#f8e3eb",
+              "on-secondary": "#ffffff",
+              "on-secondary-container": "#521428",
+              "secondary-fixed": "#f8e3eb",
+              "secondary-fixed-dim": "#f2b5c7",
+              "on-secondary-fixed": "#521428",
+              "on-secondary-fixed-variant": "#852542",
+              "tertiary": "#a3722a",
+              "tertiary-container": "#faebd2",
+              "on-tertiary": "#ffffff",
+              "on-tertiary-container": "#4a3210",
+              "tertiary-fixed": "#faebd2",
+              "tertiary-fixed-dim": "#ebd0a2",
+              "on-tertiary-fixed": "#4a3210",
+              "on-tertiary-fixed-variant": "#6e4b17",
+              "outline": "#d4bfab",
+              "outline-variant": "#e2d1c0",
+              "error": "#c92a2a",
+              "error-container": "#fde8e8",
+              "on-error": "#ffffff",
+              "on-error-container": "#691717",
+              "surface-tint": "#d8587e",
+              "gold-foil": "#a3722a",
+              "gold-bright": "#b88333",
+              "antique-parchment": "#faf3ea",
+              "parchment-border": "#d8bc92",
+              roseTone: {
+                50: '#fbf5f4',
+                100: '#f7e5e3',
+                200: '#edd3d0',
+                300: '#e1b7b4',
+                400: '#db9d9b',
+                500: '#c46872',
+                600: '#aa4c57',
+                700: '#8d3b45',
+                800: '#7a3541',
+                900: '#5c222b',
+              }
+            },
+            boxShadow: {
+              'soft-neumorphic': '18px 18px 40px rgba(186, 126, 127, 0.28), -12px -12px 30px rgba(255, 255, 255, 0.85)',
+              'card-emboss': 'inset 1px 1px 2px rgba(255, 255, 255, 0.6), 0 20px 45px -10px rgba(162, 90, 99, 0.22)',
+              'pill-glow': '0 8px 24px rgba(196, 104, 114, 0.38), inset 0 1px 1px rgba(255, 255, 255, 0.45)',
+            },
+            borderRadius: {
+              DEFAULT: "0.25rem",
+              lg: "0.5rem",
+              xl: "0.75rem",
+              full: "9999px"
+            },
+            spacing: {
+              "space-xl": "2.25rem",
+              "margin": "1.25rem",
+              "space-xs": "0.25rem",
+              "margin-desktop": "3rem",
+              "space-md": "1rem",
+              "space-lg": "1.5rem",
+              "gutter-desktop": "1.5rem",
+              "gutter": "1rem",
+              "space-sm": "0.5rem"
+            },
+            fontFamily: {
+              "headline-lg-mobile": ["Edu QLD Hand", "Edu QLD Beginner", "Cairo", "sans-serif"],
+              "body-md": ["Edu QLD Hand", "Edu QLD Beginner", "Cairo", "sans-serif"],
+              "label-md": ["Edu QLD Hand", "Edu QLD Beginner", "Cairo", "sans-serif"],
+              "label-sm": ["Edu QLD Hand", "Edu QLD Beginner", "Cairo", "sans-serif"],
+              "title-lg": ["Edu QLD Hand", "Edu QLD Beginner", "Cairo", "sans-serif"],
+              "body-lg": ["Edu QLD Hand", "Edu QLD Beginner", "Cairo", "sans-serif"],
+              "display-lg-mobile": ["Edu QLD Hand", "Edu QLD Beginner", "Cairo", "sans-serif"],
+              "headline-lg": ["Edu QLD Hand", "Edu QLD Beginner", "Cairo", "sans-serif"],
+              "display-lg": ["Edu QLD Hand", "Edu QLD Beginner", "Cairo", "sans-serif"],
+              "headline-md": ["Edu QLD Hand", "Edu QLD Beginner", "Cairo", "sans-serif"],
+              "cairo": ["Cairo", "sans-serif"],
+              "edu": ["Edu QLD Hand", "Edu QLD Beginner", "cursive", "sans-serif"],
+              "sans": ["Edu QLD Hand", "Edu QLD Beginner", "Cairo", "sans-serif"],
+              "serif": ["Edu QLD Hand", "Edu QLD Beginner", "Cairo", "serif"],
+              "cinzel": ["Edu QLD Hand", "Edu QLD Beginner", "Cairo", "serif"],
+              "amiri": ["Cairo", "Edu QLD Hand", "serif"]
+            }
+          }
+        }
+      };
+    </script>
+    <style>
+      @layer base {
+        html, body {
+          width: 100vw;
+          margin: 0;
+          padding: 0;
+          background-color: #f4ece2;
+          color: #26140f;
+        }
+        html[lang="ar"], html[lang="ar"] body, [dir="rtl"] {
+          font-family: 'Cairo', sans-serif !important;
+        }
+        html[lang="en"], html[lang="en"] body, [dir="ltr"] {
+          font-family: 'Edu QLD Hand', 'Edu QLD Beginner', cursive, sans-serif !important;
+        }
+        body {
+          overscroll-behavior: none;
+        }
+        .pb-safe {
+          padding-bottom: env(safe-area-inset-bottom, 0px);
+        }
+        .pt-safe {
+          padding-top: env(safe-area-inset-top, 0px);
+        }
+      }
+      ::-webkit-scrollbar {
+        display: none;
+      }
+      .no-scrollbar::-webkit-scrollbar {
+        display: none;
+      }
+      .no-scrollbar {
+        -ms-overflow-style: none;
+        scrollbar-width: none;
+      }
+
+      /* Antique Gilded Filigree & Book Texture Styles (No harsh glows) */
+      .filigree-gold-border {
+        border: 1px solid rgba(200, 159, 75, 0.45);
+        box-shadow: inset 0 0 10px rgba(184, 134, 11, 0.08);
+      }
+      .antique-frame {
+        outline: 1.5px solid rgba(200, 159, 75, 0.6);
+        outline-offset: -5px;
+      }
+      .clip-ribbon {
+        clip-path: polygon(0 0, 100% 0, 100% calc(100% - 6px), 50% 100%, 0 calc(100% - 6px));
+      }
+      .gold-gradient-text {
+        background: linear-gradient(135deg, #b8860b 0%, #c89f4b 50%, #996515 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+      }
+      .brass-corner-tl {
+        border-top: 2.5px solid #c89f4b;
+        border-left: 2.5px solid #c89f4b;
+      }
+      .brass-corner-tr {
+        border-top: 2.5px solid #c89f4b;
+        border-right: 2.5px solid #c89f4b;
+      }
+      .brass-corner-bl {
+        border-bottom: 2.5px solid #c89f4b;
+        border-left: 2.5px solid #c89f4b;
+      }
+      .brass-corner-br {
+        border-bottom: 2.5px solid #c89f4b;
+        border-right: 2.5px solid #c89f4b;
+      }
+    </style>
+  </head>
+  <body class="bg-surface font-body-md text-body-md text-on-surface antialiased flex flex-col min-h-screen selection:bg-primary-container selection:text-primary">
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>
